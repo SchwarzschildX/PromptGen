@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QSplitter
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QFileSystemWatcher
 
 class FilePromptApp(QWidget):
     def __init__(self):
@@ -12,6 +12,8 @@ class FilePromptApp(QWidget):
         self.settings = QSettings("MyCompany", "FilePromptApp")
         self.RoleIsLoaded = Qt.UserRole + 1
         self.RolePath = Qt.UserRole + 2
+        self.file_watcher = QFileSystemWatcher()
+        self.file_watcher.fileChanged.connect(self.onFileChanged)
         self.initUI()
         self.loadSettings()
 
@@ -111,34 +113,44 @@ class FilePromptApp(QWidget):
         clipboard.setText(full_prompt)
         print("Prompt copied to clipboard.")
 
-    def getCheckedItems(self, item, current_path, selected_files):
+    def getCheckedItems(self, item):
+        selected_files = []
         for i in range(item.childCount()):
             child = item.child(i)
             child_path = child.data(0, self.RolePath)
             if child.checkState(0) == Qt.Checked and not os.path.isdir(child_path):
                 selected_files.append(child_path)
             elif child.checkState(0) != Qt.Unchecked:
-                self.getCheckedItems(child, child_path, selected_files)
+                selected_files.extend(self.getCheckedItems(child))
+        return selected_files
+
 
     def updatePreview(self):
         prompt_text = self.prompt_edit.toPlainText()
-        selected_files = []
         root_item = self.tree.topLevelItem(0)
-        root_path = root_item.data(0, self.RolePath)
-        self.getCheckedItems(root_item, root_path, selected_files)
+        selected_files = self.getCheckedItems(root_item)
 
-        full_prompt = prompt_text + "\n\nHere the related file(s):\n\n"
+        # Update the file watcher
+        self.file_watcher.removePaths(self.file_watcher.files())
+        if selected_files:
+            self.file_watcher.addPaths(selected_files)
+
+        full_prompt = prompt_text
         for file_path in selected_files:
             try:
                 with open(file_path, 'r') as f:
                     content = f.read()
                     # Normalize file_path to use forward slashes
                     normalized_path = os.path.abspath(file_path).replace("\\", "/")
-                    full_prompt += f"\n\nFile: {normalized_path}\n```\n{content}\n```\n"
+                    full_prompt += f"\n\nFile: {normalized_path}\n```\n{content}\n```"
             except Exception as e:
                 print(f"Could not read file {file_path}: {e}")
 
         self.preview_edit.setPlainText(full_prompt)
+
+    def onFileChanged(self, path):
+        print(f"File changed: {path}")
+        self.updatePreview()
 
     def loadSettings(self):
         # Load the prompt text
@@ -167,17 +179,14 @@ class FilePromptApp(QWidget):
         # Save the prompt text
         self.settings.setValue("prompt_text", self.prompt_edit.toPlainText())
         # Save the checked files
-        selected_files = []
         root_item = self.tree.topLevelItem(0)
-        root_path = root_item.data(0, self.RolePath)
-        self.getCheckedItems(root_item, root_path, selected_files)
+        selected_files = self.getCheckedItems(root_item)
         self.settings.setValue("checked_files", selected_files)
         # Save the window size
         self.settings.setValue("window_size", self.size())
         # Save the splitter sizes
         self.settings.setValue("main_splitter_sizes", self.main_splitter.sizes())
         self.settings.setValue("right_splitter_sizes", self.right_splitter.sizes())
-
 
     def closeEvent(self, event):
         self.saveSettings()
