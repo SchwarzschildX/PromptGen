@@ -14,6 +14,8 @@ class FilePromptApp(QWidget):
         self.RolePath = Qt.UserRole + 2
         self.file_watcher = QFileSystemWatcher()
         self.file_watcher.fileChanged.connect(self.onFileChanged)
+        self.dir_watcher = QFileSystemWatcher()  # Add this line
+        self.dir_watcher.directoryChanged.connect(self.onDirectoryChanged)  # Connect signal
         self.initUI()
         self.loadSettings()
 
@@ -88,6 +90,42 @@ class FilePromptApp(QWidget):
             item_path = item.data(0, self.RolePath)
             self.addItems(item, item_path)
             item.setData(0, self.RoleIsLoaded, True)
+        # Add the directory to the watcher
+        dir_path = item.data(0, self.RolePath)
+        if os.path.isdir(dir_path):
+            if dir_path not in self.dir_watcher.directories():
+                self.dir_watcher.addPath(dir_path)
+    
+    def onItemCollapsed(self, item):
+        dir_path = item.data(0, self.RolePath)
+        if dir_path in self.dir_watcher.directories():
+            self.dir_watcher.removePath(dir_path)
+
+    def onDirectoryChanged(self, path):
+        print(f"Directory changed: {path}")
+        # Find the item corresponding to this path
+        item = self.findItemByPath(path)
+        if item:
+            # Remove all child items
+            item.takeChildren()
+            item.setData(0, self.RoleIsLoaded, False)
+            # Re-expand the item to reload its contents if it's expanded
+            if item.isExpanded():
+                self.addItems(item, path)
+                item.setData(0, self.RoleIsLoaded, True)
+
+    def findItemByPath(self, path, parent_item=None):
+        if parent_item is None:
+            parent_item = self.tree.invisibleRootItem()
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            child_path = child.data(0, self.RolePath)
+            if child_path == path:
+                return child
+            result = self.findItemByPath(path, child)
+            if result:
+                return result
+        return None
 
     def addItems(self, parent, path):
         try:
