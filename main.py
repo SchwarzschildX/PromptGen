@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QSplitter
 )
 from PyQt5.QtCore import Qt, QSettings, QFileSystemWatcher
+import PyPDF2
 
 class FilePromptApp(QWidget):
     def __init__(self):
@@ -176,15 +177,24 @@ class FilePromptApp(QWidget):
         full_prompt = prompt_text
         for file_path in selected_files:
             try:
-                with open(file_path, 'r') as f:
-                    content = f.read()
-                    # Normalize file_path to use forward slashes
-                    normalized_path = os.path.abspath(file_path).replace("\\", "/")
-                    full_prompt += f"\n\nFile: {normalized_path}\n```\n{content}\n```"
+                # Get the file extension
+                _, file_extension = os.path.splitext(file_path)
+                normalized_path = os.path.abspath(file_path).replace("\\", "/")
+
+                if file_extension.lower() == '.pdf':
+                    # Extract text from PDF
+                    content = self.extract_text_from_pdf(file_path)
+                else:
+                    # Read text from other files
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+
+                full_prompt += f"\n\nFile: {normalized_path}\n\n{content}"
             except Exception as e:
                 print(f"Could not read file {file_path}: {e}")
 
         self.preview_edit.setPlainText(full_prompt)
+
 
     def onFileChanged(self, path):
         print(f"File changed: {path}")
@@ -256,6 +266,21 @@ class FilePromptApp(QWidget):
                 return  # Item not found
         # Now, current_item corresponds to the item to check
         current_item.setCheckState(0, Qt.Checked)
+
+    def extract_text_from_pdf(self, file_path):
+        content = ''
+        try:
+            with open(file_path, 'rb') as f:
+                reader = PyPDF2.PdfReader(f)
+                for page_num in range(len(reader.pages)):
+                    page = reader.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        content += page_text
+        except Exception as e:
+            print(f"Error reading PDF file {file_path}: {e}")
+        return content
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

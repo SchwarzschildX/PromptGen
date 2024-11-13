@@ -19,7 +19,11 @@ A Python application with a graphical user interface (GUI) that allows users to 
   ```bash
   pip install PyQt5
   ```
+- **PyPDF2**: Install via pip if not already installed.
 
+  ```bash
+  pip install PyPDF2
+  ```
 ## Installation
 
 1. **Clone or Download the Repository**
@@ -31,10 +35,10 @@ A Python application with a graphical user interface (GUI) that allows users to 
 
 2. **Install Dependencies**
 
-   Ensure that PyQt5 is installed:
+   Ensure that PyQt5 and PyPDF2 are installed:
 
    ```bash
-   pip install PyQt5
+   pip install PyQt5 PyPDF2
    ```
 
 ## Usage
