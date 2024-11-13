@@ -58,9 +58,15 @@ A Python application with a graphical user interface (GUI) that allows users to 
      - Select files or entire directories by checking the boxes next to them.
      - The application uses lazy loading, so directories load their contents when expanded.
 
+   - **Filter File Tree By File Type**
+
+     - In the top-right text area, enter file type extensions you want to filter by, e.g. `.txt` or `.py`.
+     - Separate the file type extensions by comma and space to filter by multiple values, e.g. `.txt, .py`.
+     - As an alternative, modify the `addItems` method as described in [Configuration > File Type Filtering](#configuration) to permanently filter by one or multiple file types.
+   
    - **Entering a Prompt**
 
-     - In the top-right text area, enter your custom prompt.
+     - In the center-right text area, enter your custom prompt.
      - This text will precede the contents of the selected files in the combined prompt.
 
    - **Previewing the Prompt**

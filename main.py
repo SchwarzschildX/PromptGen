@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, QSplitter
+    QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QSplitter
 )
 from PyQt5.QtCore import Qt, QSettings, QFileSystemWatcher
 import PyPDF2
@@ -15,8 +15,8 @@ class FilePromptApp(QWidget):
         self.RolePath = Qt.UserRole + 2
         self.file_watcher = QFileSystemWatcher()
         self.file_watcher.fileChanged.connect(self.onFileChanged)
-        self.dir_watcher = QFileSystemWatcher()  # Add this line
-        self.dir_watcher.directoryChanged.connect(self.onDirectoryChanged)  # Connect signal
+        self.dir_watcher = QFileSystemWatcher()
+        self.dir_watcher.directoryChanged.connect(self.onDirectoryChanged)
         self.initUI()
         self.loadSettings()
 
@@ -33,6 +33,11 @@ class FilePromptApp(QWidget):
         self.prompt_edit.setPlaceholderText("Enter your prompt here...")
         self.prompt_edit.textChanged.connect(self.updatePreview)
 
+        # Create the file extension filter field
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText("Filter by extensions (e.g: '.txt, .py')")
+        self.filter_edit.textChanged.connect(self.filter_tree_items)
+
         # Create the preview text field
         self.preview_edit = QTextEdit()
         self.preview_edit.setReadOnly(True)
@@ -48,6 +53,7 @@ class FilePromptApp(QWidget):
 
         # Layout for the right side
         right_layout = QVBoxLayout()
+        right_layout.addWidget(self.filter_edit)
         right_layout.addWidget(right_splitter)
         right_layout.addWidget(self.button)
 
@@ -96,7 +102,9 @@ class FilePromptApp(QWidget):
         if os.path.isdir(dir_path):
             if dir_path not in self.dir_watcher.directories():
                 self.dir_watcher.addPath(dir_path)
-    
+
+        self.filter_tree_items()
+
     def onItemCollapsed(self, item):
         dir_path = item.data(0, self.RolePath)
         if dir_path in self.dir_watcher.directories():
@@ -143,8 +151,7 @@ class FilePromptApp(QWidget):
             item.setData(0, self.RoleIsLoaded, False)
             if os.path.isdir(item_path):
                 item.setFlags(item.flags() | Qt.ItemIsTristate)
-                item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)  # Add this line
-                # Children will be loaded when item is expanded
+                item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
 
     def generatePrompt(self):
         full_prompt = self.preview_edit.toPlainText()
@@ -162,7 +169,6 @@ class FilePromptApp(QWidget):
             elif child.checkState(0) != Qt.Unchecked:
                 selected_files.extend(self.getCheckedItems(child))
         return selected_files
-
 
     def updatePreview(self):
         prompt_text = self.prompt_edit.toPlainText()
@@ -194,7 +200,6 @@ class FilePromptApp(QWidget):
                 print(f"Could not read file {file_path}: {e}")
 
         self.preview_edit.setPlainText(full_prompt)
-
 
     def onFileChanged(self, path):
         print(f"File changed: {path}")
@@ -280,6 +285,31 @@ class FilePromptApp(QWidget):
         except Exception as e:
             print(f"Error reading PDF file {file_path}: {e}")
         return content
+
+    def filter_tree_items(self):
+        filter_extensions = [
+            ext.strip().lower() for ext in self.filter_edit.text().split(',')
+        ] if self.filter_edit.text() else []
+
+        self.recursive_filter_items(self.tree.invisibleRootItem(), filter_extensions)
+
+    def recursive_filter_items(self, item, filter_extensions):
+        """Recursively filter items and their children based on filter text."""
+
+        # Check all child items of the current item
+        for i in range(item.childCount()):
+            child = item.child(i)
+            # Recursive call to handle the child's children
+            child_visible = self.recursive_filter_items(child, filter_extensions)
+
+            child.setHidden(not child_visible)
+
+        _, file_extension = os.path.splitext(item.text(0).lower())
+
+        item_matches_filter = file_extension in filter_extensions
+        item_visible = item_matches_filter or not file_extension or not filter_extensions
+
+        return item_visible
 
 
 if __name__ == '__main__':
