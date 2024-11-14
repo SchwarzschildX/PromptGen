@@ -227,6 +227,12 @@ class FilePromptApp(QWidget):
         if right_splitter_sizes:
             sizes = [int(size) for size in right_splitter_sizes]
             self.right_splitter.setSizes(sizes)
+        # Load the filter text
+        filter_text = self.settings.value("filter_text", "")
+        self.filter_edit.setText(filter_text)
+        # Apply the filter
+        if filter_text:
+            self.filter_tree_items()
 
     def saveSettings(self):
         # Save the prompt text
@@ -240,6 +246,8 @@ class FilePromptApp(QWidget):
         # Save the splitter sizes
         self.settings.setValue("main_splitter_sizes", self.main_splitter.sizes())
         self.settings.setValue("right_splitter_sizes", self.right_splitter.sizes())
+        # Save the filter text
+        self.settings.setValue("filter_text", self.filter_edit.text())
 
     def closeEvent(self, event):
         self.saveSettings()
