@@ -115,13 +115,56 @@ class FilePromptApp(QWidget):
         # Find the item corresponding to this path
         item = self.findItemByPath(path)
         if item:
-            # Remove all child items
-            item.takeChildren()
-            item.setData(0, self.RoleIsLoaded, False)
-            # Re-expand the item to reload its contents if it's expanded
-            if item.isExpanded():
-                self.addItems(item, path)
-                item.setData(0, self.RoleIsLoaded, True)
+            # Create a mapping of existing child items by their names
+            existing_items = {child.text(0): child for child in [item.child(i) for i in range(item.childCount())]}
+
+            # Get the updated list of items in the directory
+            try:
+                new_item_names = os.listdir(path)
+            except PermissionError:
+                new_item_names = []
+
+            # Create a set of new item names for quick lookup
+            new_item_names_set = set(new_item_names)
+
+            # Remove items that are no longer present in the directory
+            for name in list(existing_items.keys()):
+                if name not in new_item_names_set:
+                    child = existing_items[name]
+                    index = item.indexOfChild(child)
+                    item.takeChild(index)
+                    del existing_items[name]
+
+            # Add new items that have been added to the directory
+            for name in new_item_names:
+                if name not in existing_items:
+                    child_path = os.path.join(path, name)
+                    child_item = QTreeWidgetItem(item)
+                    child_item.setText(0, name)
+                    child_item.setFlags(child_item.flags() | Qt.ItemIsUserCheckable)
+                    child_item.setCheckState(0, Qt.Unchecked)
+                    child_item.setData(0, self.RolePath, child_path)
+                    child_item.setData(0, self.RoleIsLoaded, False)
+                    if os.path.isdir(child_path):
+                        child_item.setFlags(child_item.flags() | Qt.ItemIsTristate)
+                        child_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+                    existing_items[name] = child_item
+
+            # Optionally, refresh child items that may have changed (e.g., file to directory)
+            for name, child_item in existing_items.items():
+                child_path = os.path.join(path, name)
+                is_dir = os.path.isdir(child_path)
+                was_dir = child_item.flags() & Qt.ItemIsTristate
+                if is_dir and not was_dir:
+                    # Update the item to a directory type
+                    child_item.setFlags(child_item.flags() | Qt.ItemIsTristate)
+                    child_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+                elif not is_dir and was_dir:
+                    # Update the item to a file type
+                    child_item.setFlags(child_item.flags() & ~Qt.ItemIsTristate)
+                    child_item.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)
+
+            self.tree.update()
 
     def findItemByPath(self, path, parent_item=None):
         if parent_item is None:
