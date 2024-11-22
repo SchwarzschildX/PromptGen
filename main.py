@@ -238,7 +238,7 @@ class FilePromptApp(QWidget):
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         content = f.read()
 
-                full_prompt += f"\n\nFile: {normalized_path}\n\n{content}"
+                full_prompt += f"\n\nFile: {normalized_path}\n\n```\n{content}\n```"
             except Exception as e:
                 print(f"Could not read file {file_path}: {e}")
 
