@@ -1,11 +1,13 @@
 import sys
 import os
+import ctypes
+import string
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, 
     QPushButton, QSplitter, QCheckBox
 )
-from PyQt5.QtCore import Qt, QSettings, QFileSystemWatcher
+from PyQt5.QtCore import Qt, QSettings, QFileSystemWatcher, QTimer
 import PyPDF2
 
 class FilePromptApp(QWidget):
@@ -81,14 +83,24 @@ class FilePromptApp(QWidget):
         self.right_splitter = right_splitter
 
     def populateTree(self):
-        home_dir = os.path.expanduser("C:/")
-        root_item = QTreeWidgetItem(self.tree)
-        root_item.setText(0, home_dir)
-        root_item.setFlags(root_item.flags() | Qt.ItemIsTristate | Qt.ItemIsUserCheckable)
-        root_item.setCheckState(0, Qt.Unchecked)
-        root_item.setData(0, self.RolePath, home_dir)
-        root_item.setData(0, self.RoleIsLoaded, False)
-        root_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        # Clear existing tree items
+        self.tree.clear()
+
+        # Get all drives on Windows
+        drives = []
+        bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+        for i in range(26):
+            if bitmask & (1 << i):
+                drives.append(f"{string.ascii_uppercase[i]}:/")
+
+        for drive in drives:
+            root_item = QTreeWidgetItem(self.tree)
+            root_item.setText(0, drive)
+            root_item.setFlags(root_item.flags() | Qt.ItemIsTristate | Qt.ItemIsUserCheckable)
+            root_item.setCheckState(0, Qt.Unchecked)
+            root_item.setData(0, self.RolePath, drive)
+            root_item.setData(0, self.RoleIsLoaded, False)
+            root_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
 
     def onItemExpanded(self, item):
         if not item.data(0, self.RoleIsLoaded):
@@ -148,8 +160,17 @@ class FilePromptApp(QWidget):
             items = os.listdir(path)
         except PermissionError:
             return
+
+        dirs = []
+        files = []
         for item_name in items:
             item_path = os.path.join(path, item_name)
+            if os.path.isdir(item_path):
+                dirs.append((item_name, item_path))
+            else:
+                files.append((item_name, item_path))
+
+        for item_name, item_path in dirs + files:  # Folders first
             item = QTreeWidgetItem(parent)
             item.setText(0, item_name)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
@@ -184,7 +205,12 @@ class FilePromptApp(QWidget):
         current_files = self.file_watcher.files()
         if current_files:
             self.file_watcher.removePaths(current_files)
-        selected_files = self.getCheckedItems(self.tree.topLevelItem(0))
+
+        selected_files = []
+        for i in range(self.tree.topLevelItemCount()):
+            top_item = self.tree.topLevelItem(i)
+            selected_files.extend(self.getCheckedItems(top_item))
+
         if selected_files:
             self.file_watcher.addPaths(selected_files)
         prompt_text = self.prompt_edit.toPlainText()
@@ -207,27 +233,72 @@ class FilePromptApp(QWidget):
         self.filter_edit.setText(self.settings.value("filter_text", ""))
         self.ignore_dot_files_checkbox.setChecked(self.settings.value("hide_dot_files", False, type=bool))
         self.ignore_dunder_checkbox.setChecked(self.settings.value("hide_dunder", False, type=bool))
+
         if window_size := self.settings.value("window_size"):
             self.resize(window_size)
         if main_sizes := self.settings.value("main_splitter_sizes"):
             self.main_splitter.setSizes([int(s) for s in main_sizes])
         if right_sizes := self.settings.value("right_splitter_sizes"):
             self.right_splitter.setSizes([int(s) for s in right_sizes])
+
         self.checked_files = self.settings.value("checked_files", [])
-        self.restoreCheckedItems()
+        expanded_paths = self.settings.value("expanded_items", [])
+
+        def restore_checked_items():
+            for path in self.checked_files:
+                self.checkItemByPath(path)
+
+        def restore_expanded_items():
+            def restore_expanded(item):
+                path = item.data(0, self.RolePath)
+                if path in expanded_paths:
+                    self.tree.expandItem(item)
+                for i in range(item.childCount()):
+                    restore_expanded(item.child(i))
+
+            for i in range(self.tree.topLevelItemCount()):
+                restore_expanded(self.tree.topLevelItem(i))
+
+        # Delay restore until tree is fully populated
+        QTimer.singleShot(500, restore_checked_items)
+        QTimer.singleShot(500, restore_expanded_items)
 
     def saveSettings(self):
+        # Save prompt and UI state
         self.settings.setValue("prompt_text", self.prompt_edit.toPlainText())
-        self.settings.setValue("checked_files", self.getCheckedItems(self.tree.topLevelItem(0)))
-        self.settings.setValue("window_size", self.size())
-        self.settings.setValue("main_splitter_sizes", self.main_splitter.sizes())
-        self.settings.setValue("right_splitter_sizes", self.right_splitter.sizes())
         self.settings.setValue("filter_text", self.filter_edit.text())
         self.settings.setValue("hide_dot_files", self.ignore_dot_files_checkbox.isChecked())
         self.settings.setValue("hide_dunder", self.ignore_dunder_checkbox.isChecked())
+        self.settings.setValue("window_size", self.size())
+        self.settings.setValue("main_splitter_sizes", self.main_splitter.sizes())
+        self.settings.setValue("right_splitter_sizes", self.right_splitter.sizes())
+
+        # Save checked files from all top-level items
+        checked_files = []
+        for i in range(self.tree.topLevelItemCount()):
+            top_item = self.tree.topLevelItem(i)
+            checked_files.extend(self.getCheckedItems(top_item))
+        self.settings.setValue("checked_files", checked_files)
+
+        # Save expanded items (by path)
+        expanded_paths = []
+        def collect_expanded(item):
+            if item.isExpanded():
+                expanded_paths.append(item.data(0, self.RolePath))
+            for i in range(item.childCount()):
+                collect_expanded(item.child(i))
+
+        for i in range(self.tree.topLevelItemCount()):
+            collect_expanded(self.tree.topLevelItem(i))
+
+        self.settings.setValue("expanded_items", expanded_paths)
+
 
     def closeEvent(self, event):
-        self.saveSettings()
+        try:
+            self.saveSettings()
+        except Exception as e:
+            print(f"Error saving settings: {e}")
         event.accept()
 
     def restoreCheckedItems(self):
@@ -235,24 +306,33 @@ class FilePromptApp(QWidget):
             self.checkItemByPath(path)
 
     def checkItemByPath(self, file_path):
-        root_item = self.tree.topLevelItem(0)
-        root_path = root_item.data(0, self.RolePath)
-        if not file_path.startswith(root_path):
+        for i in range(self.tree.topLevelItemCount()):
+            root_item = self.tree.topLevelItem(i)
+            root_path = root_item.data(0, self.RolePath)
+            if not file_path.startswith(root_path):
+                continue
+
+            relative_parts = os.path.relpath(file_path, root_path).split(os.sep)
+            current_item = root_item
+
+            for part in relative_parts:
+                self.tree.expandItem(current_item)
+                if not current_item.data(0, self.RoleIsLoaded):
+                    self.addItems(current_item, current_item.data(0, self.RolePath))
+                    current_item.setData(0, self.RoleIsLoaded, True)
+
+                found = None
+                for j in range(current_item.childCount()):
+                    child = current_item.child(j)
+                    if child.text(0) == part:
+                        found = child
+                        break
+                if not found:
+                    return  # Path doesn't exist or wasn't loadable
+                current_item = found
+
+            current_item.setCheckState(0, Qt.Checked)
             return
-        parts = os.path.relpath(file_path, root_path).split(os.sep)
-        current_item = root_item
-        for part in parts:
-            self.tree.expandItem(current_item)
-            found = False
-            for i in range(current_item.childCount()):
-                child = current_item.child(i)
-                if child.text(0) == part:
-                    current_item = child
-                    found = True
-                    break
-            if not found:
-                return
-        current_item.setCheckState(0, Qt.Checked)
 
     def extract_text_from_pdf(self, file_path):
         content = ''
