@@ -38,8 +38,11 @@ class FilePromptApp(QWidget):
 
         self.ignore_dot_files_checkbox = QCheckBox("Ignore dot files")
         self.ignore_dunder_checkbox = QCheckBox("Ignore __ files")
+        self.dark_mode_checkbox = QCheckBox("Dark Mode")
+
         self.ignore_dot_files_checkbox.stateChanged.connect(self.filter_tree_items)
         self.ignore_dunder_checkbox.stateChanged.connect(self.filter_tree_items)
+        self.dark_mode_checkbox.stateChanged.connect(self.toggleDarkMode)
 
         self.preview_edit = QTextEdit()
         self.preview_edit.setReadOnly(True)
@@ -54,6 +57,7 @@ class FilePromptApp(QWidget):
         checkbox_layout = QHBoxLayout()
         checkbox_layout.addWidget(self.ignore_dot_files_checkbox)
         checkbox_layout.addWidget(self.ignore_dunder_checkbox)
+        checkbox_layout.addWidget(self.dark_mode_checkbox)
         checkbox_layout.addStretch()
 
         right_layout = QVBoxLayout()
@@ -81,6 +85,28 @@ class FilePromptApp(QWidget):
         self.show()
         self.main_splitter = main_splitter
         self.right_splitter = right_splitter
+
+    def toggleDarkMode(self, state):
+        if state == Qt.Checked:
+            self.setStyleSheet("""
+                QWidget {
+                    background-color: #121212;
+                    color: #e0e0e0;
+                }
+                QLineEdit, QTextEdit, QTreeWidget, QPushButton {
+                    background-color: #1e1e1e;
+                    color: #e0e0e0;
+                    border: 1px solid #444;
+                }
+                QCheckBox {
+                    spacing: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #333333;
+                }
+            """)
+        else:
+            self.setStyleSheet("")
 
     def populateTree(self):
         # Clear existing tree items
@@ -233,6 +259,8 @@ class FilePromptApp(QWidget):
         self.filter_edit.setText(self.settings.value("filter_text", ""))
         self.ignore_dot_files_checkbox.setChecked(self.settings.value("hide_dot_files", False, type=bool))
         self.ignore_dunder_checkbox.setChecked(self.settings.value("hide_dunder", False, type=bool))
+        self.dark_mode_checkbox.setChecked(self.settings.value("dark_mode", False, type=bool))
+        self.toggleDarkMode(Qt.Checked if self.dark_mode_checkbox.isChecked() else Qt.Unchecked)
 
         if window_size := self.settings.value("window_size"):
             self.resize(window_size)
@@ -269,6 +297,7 @@ class FilePromptApp(QWidget):
         self.settings.setValue("filter_text", self.filter_edit.text())
         self.settings.setValue("hide_dot_files", self.ignore_dot_files_checkbox.isChecked())
         self.settings.setValue("hide_dunder", self.ignore_dunder_checkbox.isChecked())
+        self.settings.setValue("dark_mode", self.dark_mode_checkbox.isChecked())
         self.settings.setValue("window_size", self.size())
         self.settings.setValue("main_splitter_sizes", self.main_splitter.sizes())
         self.settings.setValue("right_splitter_sizes", self.right_splitter.sizes())
