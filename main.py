@@ -20,6 +20,9 @@ class FilePromptApp(QWidget):
         self.file_watcher.fileChanged.connect(self.onFileChanged)
         self.dir_watcher = QFileSystemWatcher()
         self.dir_watcher.directoryChanged.connect(self.onDirectoryChanged)
+        self.update_timer = QTimer(self)
+        self.update_timer.setSingleShot(True)
+        self.update_timer.timeout.connect(self.updatePreview)
         self.initUI()
         self.loadSettings()
 
@@ -30,7 +33,7 @@ class FilePromptApp(QWidget):
 
         self.prompt_edit = QTextEdit()
         self.prompt_edit.setPlaceholderText("Enter your prompt here...")
-        self.prompt_edit.textChanged.connect(self.updatePreview)
+        self.prompt_edit.textChanged.connect(self.schedulePreviewUpdate)
 
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Filter by extensions (e.g: '.txt, .py')")
@@ -78,7 +81,7 @@ class FilePromptApp(QWidget):
 
         self.tree.itemExpanded.connect(self.onItemExpanded)
         self.tree.itemCollapsed.connect(self.onItemCollapsed)
-        self.tree.itemChanged.connect(self.updatePreview)
+        self.tree.itemChanged.connect(self.onItemChanged)
         self.populateTree()
 
         self.setWindowTitle("Prompt Generator")
@@ -167,6 +170,7 @@ class FilePromptApp(QWidget):
                     if os.path.isdir(child_path):
                         child_item.setFlags(child_item.flags() | Qt.ItemIsTristate)
                         child_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+            self.sortItemChildren(item)
             self.tree.update()
             self.filter_tree_items()
 
@@ -196,7 +200,10 @@ class FilePromptApp(QWidget):
             else:
                 files.append((item_name, item_path))
 
-        for item_name, item_path in dirs + files:  # Folders first
+        dirs.sort(key=lambda x: x[0].lower())
+        files.sort(key=lambda x: x[0].lower())
+
+        for item_name, item_path in dirs + files:  # Folders first, alphabetical
             item = QTreeWidgetItem(parent)
             item.setText(0, item_name)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
@@ -206,6 +213,23 @@ class FilePromptApp(QWidget):
             if os.path.isdir(item_path):
                 item.setFlags(item.flags() | Qt.ItemIsTristate)
                 item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        self.sortItemChildren(parent)
+
+    def sortItemChildren(self, item):
+        """!
+        @brief Sort a tree item's children.
+
+        Directories are placed before files, with all items sorted
+        alphabetically by name. This method preserves existing children and
+        reorders them in place.
+        """
+        children = [item.child(i) for i in range(item.childCount())]
+        children.sort(key=lambda c: (
+            not os.path.isdir(c.data(0, self.RolePath)), c.text(0).lower()
+        ))
+        for index, child in enumerate(children):
+            item.takeChild(item.indexOfChild(child))
+            item.insertChild(index, child)
 
     def generatePrompt(self):
         clipboard = QApplication.clipboard()
@@ -252,7 +276,39 @@ class FilePromptApp(QWidget):
         self.preview_edit.setPlainText(full_prompt)
 
     def onFileChanged(self, path):
-        self.updatePreview()
+        self.schedulePreviewUpdate()
+
+    def schedulePreviewUpdate(self):
+        """!
+        @brief Queue a preview refresh.
+
+        Uses a single-shot timer to debounce rapid changes for better
+        performance when many items are toggled in quick succession.
+        """
+        self.update_timer.start(100)
+
+    def onItemChanged(self, item, column):
+        """!
+        @brief Handle check state changes on tree items.
+
+        When a collapsed directory is checked, its children are lazily
+        loaded and marked as checked. Signals are temporarily blocked to
+        avoid redundant updates.
+        """
+        if column != 0:
+            return
+
+        if item.checkState(0) == Qt.Checked:
+            item_path = item.data(0, self.RolePath)
+            if os.path.isdir(item_path) and not item.data(0, self.RoleIsLoaded):
+                self.addItems(item, item_path)
+                item.setData(0, self.RoleIsLoaded, True)
+                self.tree.blockSignals(True)
+                for i in range(item.childCount()):
+                    item.child(i).setCheckState(0, Qt.Checked)
+                self.tree.blockSignals(False)
+
+        self.schedulePreviewUpdate()
 
     def loadSettings(self):
         self.prompt_edit.setPlainText(self.settings.value("prompt_text", ""))
@@ -402,8 +458,8 @@ class FilePromptApp(QWidget):
         # Item is visible if it matches the filter or has visible children and isn't being ignored.
         item_visible = (matches_filter or any_child_visible) and not (ignore_dot or ignore_dunder)
         
-        # Always show the top-level item.
-        if item is self.tree.topLevelItem(0):
+        # Always show drive roots and other top-level items.
+        if item.parent() is None:
             item_visible = True
 
         item.setHidden(not item_visible)
