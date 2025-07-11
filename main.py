@@ -20,6 +20,8 @@ class FilePromptApp(QWidget):
         self.file_watcher.fileChanged.connect(self.onFileChanged)
         self.dir_watcher = QFileSystemWatcher()
         self.dir_watcher.directoryChanged.connect(self.onDirectoryChanged)
+        self.restoring = False
+        self.pending_update = False
         self.update_timer = QTimer(self)
         self.update_timer.setSingleShot(True)
         self.update_timer.timeout.connect(self.updatePreview)
@@ -203,6 +205,8 @@ class FilePromptApp(QWidget):
         dirs.sort(key=lambda x: x[0].lower())
         files.sort(key=lambda x: x[0].lower())
 
+        initial_count = parent.childCount()
+
         for item_name, item_path in dirs + files:  # Folders first, alphabetical
             item = QTreeWidgetItem(parent)
             item.setText(0, item_name)
@@ -213,7 +217,8 @@ class FilePromptApp(QWidget):
             if os.path.isdir(item_path):
                 item.setFlags(item.flags() | Qt.ItemIsTristate)
                 item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
-        self.sortItemChildren(parent)
+        if initial_count:
+            self.sortItemChildren(parent)
 
     def sortItemChildren(self, item):
         """!
@@ -278,6 +283,18 @@ class FilePromptApp(QWidget):
     def onFileChanged(self, path):
         self.schedulePreviewUpdate()
 
+    def finishRestore(self):
+        """!
+        @brief Finalize restoration of saved tree state.
+
+        Triggers any pending preview updates after restoring checked and
+        expanded items.
+        """
+        self.restoring = False
+        if self.pending_update:
+            self.pending_update = False
+            self.update_timer.start(100)
+
     def schedulePreviewUpdate(self):
         """!
         @brief Queue a preview refresh.
@@ -285,6 +302,9 @@ class FilePromptApp(QWidget):
         Uses a single-shot timer to debounce rapid changes for better
         performance when many items are toggled in quick succession.
         """
+        if self.restoring:
+            self.pending_update = True
+            return
         self.update_timer.start(100)
 
     def onItemChanged(self, item, column):
@@ -328,11 +348,10 @@ class FilePromptApp(QWidget):
         self.checked_files = self.settings.value("checked_files", [])
         expanded_paths = self.settings.value("expanded_items", [])
 
-        def restore_checked_items():
+        def restore_state():
             for path in self.checked_files:
                 self.checkItemByPath(path)
 
-        def restore_expanded_items():
             def restore_expanded(item):
                 path = item.data(0, self.RolePath)
                 if path in expanded_paths:
@@ -343,9 +362,12 @@ class FilePromptApp(QWidget):
             for i in range(self.tree.topLevelItemCount()):
                 restore_expanded(self.tree.topLevelItem(i))
 
+            self.filter_tree_items()
+            self.finishRestore()
+
+        self.restoring = True
         # Delay restore until tree is fully populated
-        QTimer.singleShot(500, restore_checked_items)
-        QTimer.singleShot(500, restore_expanded_items)
+        QTimer.singleShot(500, restore_state)
 
     def saveSettings(self):
         # Save prompt and UI state
