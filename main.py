@@ -312,8 +312,8 @@ class FilePromptApp(QWidget):
         @brief Handle check state changes on tree items.
 
         When a collapsed directory is checked, its children are lazily
-        loaded and marked as checked. Signals are temporarily blocked to
-        avoid redundant updates.
+        loaded, filtered, and visible children are marked as checked.
+        Signals are temporarily blocked to avoid redundant updates.
         """
         if column != 0:
             return
@@ -323,9 +323,12 @@ class FilePromptApp(QWidget):
             if os.path.isdir(item_path) and not item.data(0, self.RoleIsLoaded):
                 self.addItems(item, item_path)
                 item.setData(0, self.RoleIsLoaded, True)
+                self.filter_tree_items()
                 self.tree.blockSignals(True)
                 for i in range(item.childCount()):
-                    item.child(i).setCheckState(0, Qt.Checked)
+                    child = item.child(i)
+                    if not child.isHidden():
+                        child.setCheckState(0, Qt.Checked)
                 self.tree.blockSignals(False)
 
         self.schedulePreviewUpdate()
