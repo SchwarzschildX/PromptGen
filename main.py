@@ -281,7 +281,21 @@ class FilePromptApp(QWidget):
         self.preview_edit.setPlainText(full_prompt)
 
     def onFileChanged(self, path):
+        self.refreshFileWatcher(path)
         self.schedulePreviewUpdate()
+
+    def refreshFileWatcher(self, path):
+        """!
+        @brief Ensure a changed file remains under watch.
+
+        Some editors replace files on save, causing the watcher to drop the
+        path. This method re-adds the file to the watcher if it still exists
+        and is no longer being monitored.
+        
+        @param path Absolute file system path that triggered the change event.
+        """
+        if os.path.exists(path) and path not in self.file_watcher.files():
+            self.file_watcher.addPath(path)
 
     def finishRestore(self):
         """!
